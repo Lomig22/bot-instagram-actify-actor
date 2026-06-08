@@ -1,12 +1,14 @@
 /**
  * Instagram BTP Lead Scraper — Apify Actor entry point.
  *
- * Pipeline per hashtag:
- *   1. Call apify/instagram-scraper for the hashtag.
- *   2. Normalize each scraped profile.
- *   3. Filter: must be a BTP profile AND have no detectable website.
- *   4. Deduplicate by username.
- *   5. Score and persist qualified leads (Apify dataset + optional Supabase).
+ * Two-stage pipeline per hashtag (required by apify/instagram-scraper):
+ *   Stage 1 — scrape the hashtag for posts, collect unique owner usernames.
+ *             (Hashtag posts do NOT carry bio / followers / external URL.)
+ *   Stage 2 — scrape those usernames with resultsType 'details' to obtain the
+ *             full profile (bio, followers, external URL, business category…).
+ *
+ * Then: filter (BTP + no website + thresholds), deduplicate, score, persist
+ * (Apify dataset + optional Supabase).
  */
 
 import { Actor } from 'apify';
@@ -35,34 +37,35 @@ function firstOf(...values) {
 }
 
 /**
- * Normalize a raw scraped item into a uniform profile object.
- * The instagram-scraper output shape varies by version, so we look the
- * relevant fields up in several places.
+ * Read all items from a finished run's default dataset.
+ */
+async function getRunItems(run) {
+  if (!run || !run.defaultDatasetId) return [];
+  const { items } = await Actor.apifyClient.dataset(run.defaultDatasetId).listItems();
+  return items || [];
+}
+
+/**
+ * Normalize a "details" result from instagram-scraper into a uniform profile.
+ * Field names follow the current scraper's profile-details output.
  */
 function normalizeProfile(item) {
-  const owner = item.owner || {};
+  const externalUrl = firstOf(
+    item.externalUrl,
+    Array.isArray(item.externalUrls) && item.externalUrls.length ? item.externalUrls[0]?.url : undefined,
+  );
 
   return {
-    username: firstOf(item.ownerUsername, owner.username, item.username),
-    fullName: firstOf(item.ownerFullName, owner.full_name, owner.fullName, item.fullName),
-    biography: firstOf(item.biography, owner.biography, ''),
-    followersCount: Number(
-      firstOf(item.followersCount, owner.followersCount, owner.edge_followed_by?.count, 0),
-    ) || 0,
-    followingCount: Number(
-      firstOf(item.followingCount, owner.followingCount, owner.edge_follow?.count, 0),
-    ) || 0,
-    postsCount: Number(
-      firstOf(item.postsCount, owner.postsCount, owner.igTVVideoCount, 0),
-    ) || 0,
-    externalUrl: firstOf(item.externalUrl, owner.external_url, owner.externalUrl),
-    businessCategoryName: firstOf(
-      item.businessCategoryName,
-      owner.businessCategoryName,
-      owner.business_category_name,
-    ),
-    isVerified: Boolean(firstOf(item.isVerified, owner.isVerified, owner.is_verified, false)),
-    isPrivate: Boolean(firstOf(item.private, owner.isPrivate, owner.is_private, false)),
+    username: firstOf(item.username, item.ownerUsername),
+    fullName: firstOf(item.fullName, item.ownerFullName),
+    biography: firstOf(item.biography, ''),
+    followersCount: Number(firstOf(item.followersCount, 0)) || 0,
+    followingCount: Number(firstOf(item.followsCount, item.followingCount, 0)) || 0,
+    postsCount: Number(firstOf(item.postsCount, 0)) || 0,
+    externalUrl,
+    businessCategoryName: firstOf(item.businessCategoryName, item.businessCategory),
+    isVerified: Boolean(item.verified),
+    isPrivate: Boolean(item.private),
   };
 }
 
@@ -82,11 +85,10 @@ try {
     proxyEnabled = true,
   } = input;
 
-  // Proxy configuration (residential group).
-  let proxyConfiguration;
-  if (proxyEnabled) {
-    proxyConfiguration = await Actor.createProxyConfiguration({ groups: ['RESIDENTIAL'] });
-  }
+  // Proxy is passed to the child scraper as a standard Apify proxy object.
+  const proxy = proxyEnabled
+    ? { useApifyProxy: true, apifyProxyGroups: ['RESIDENTIAL'] }
+    : { useApifyProxy: false };
 
   const supabaseConfig =
     supabaseUrl && supabaseKey
@@ -106,23 +108,45 @@ try {
     try {
       console.log(`\n🔎 Hashtag #${hashtag}`);
 
-      const runInput = {
-        hashtags: [hashtag],
+      // ── Stage 1: hashtag posts → unique owner usernames ──
+      const postsRun = await Actor.call(INSTAGRAM_SCRAPER_ACTOR, {
+        search: hashtag,
+        searchType: 'hashtag',
+        resultsType: 'posts',
         resultsLimit: resultsPerHashtag,
-        scrapeType: 'posts',
-        expandOwners: true,
-        includeUserData: true,
-        proxy: proxyConfiguration ? await proxyConfiguration.newUrl() : undefined,
-      };
+        proxy,
+      });
+      const posts = await getRunItems(postsRun);
+      totalScraped += posts.length;
 
-      const run = await Actor.call(INSTAGRAM_SCRAPER_ACTOR, runInput);
-      const { items } = await Actor.apifyClient
-        .dataset(run.defaultDatasetId)
-        .listItems();
+      const owners = [];
+      const ownerSet = new Set();
+      for (const post of posts) {
+        const username = post.ownerUsername;
+        if (username && !ownerSet.has(username) && !seenUsernames.has(username)) {
+          ownerSet.add(username);
+          owners.push(username);
+        }
+      }
 
-      totalScraped += items.length;
+      if (owners.length === 0) {
+        console.log(`   Aucun propriétaire exploitable pour #${hashtag}`);
+        await randomSleep(2000, 4000);
+        continue;
+      }
 
-      for (const item of items) {
+      console.log(`   ${posts.length} posts → ${owners.length} profils uniques à enrichir`);
+
+      // ── Stage 2: profile details for each owner ──
+      const detailsRun = await Actor.call(INSTAGRAM_SCRAPER_ACTOR, {
+        directUrls: owners.map((u) => `https://www.instagram.com/${u}/`),
+        resultsType: 'details',
+        resultsLimit: owners.length,
+        proxy,
+      });
+      const details = await getRunItems(detailsRun);
+
+      for (const item of details) {
         const profile = normalizeProfile(item);
         if (!profile.username) continue;
 
@@ -138,7 +162,7 @@ try {
         }
         if (profile.postsCount < minPosts) continue;
 
-        // Deduplicate by username.
+        // Deduplicate by username (across hashtags).
         if (seenUsernames.has(profile.username)) continue;
         seenUsernames.add(profile.username);
 
