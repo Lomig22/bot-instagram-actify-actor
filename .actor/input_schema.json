@@ -61,6 +61,20 @@
       "editor": "number",
       "default": 5
     },
+    "excludeForeign": {
+      "title": "Exclure les profils étrangers",
+      "type": "boolean",
+      "description": "Ignorer les profils avec un signal clairement étranger (indicatif tél. non-FR, ville/pays hors France dans la bio, le username ou le nom).",
+      "editor": "checkbox",
+      "default": true
+    },
+    "excludeVerified": {
+      "title": "Exclure les comptes certifiés",
+      "type": "boolean",
+      "description": "Ignorer les profils vérifiés (badge bleu) : notoriété déjà établie.",
+      "editor": "checkbox",
+      "default": true
+    },
     "supabaseUrl": {
       "title": "Supabase URL",
       "type": "string",

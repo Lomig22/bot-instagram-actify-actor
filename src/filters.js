@@ -103,3 +103,50 @@ export function hasNoWebsite(profile) {
   // 3. Nothing found → no website detected.
   return true;
 }
+
+// Distinctive foreign location tokens (countries / cities outside France).
+// French overseas departments (Réunion, Guadeloupe…) are intentionally NOT here.
+const FOREIGN_TOKENS = [
+  'cotedivoire', 'ivoire', 'abidjan', 'dakar', 'senegal', 'maroc', 'morocco',
+  'casablanca', 'marrakech', 'rabat', 'tanger', 'algerie', 'algeria', 'alger',
+  'oran', 'tunisie', 'tunisia', 'tunis', 'cameroun', 'cameroon', 'douala',
+  'yaounde', 'belgique', 'belgium', 'belgie', 'bruxelles', 'brussels', 'liege',
+  'anvers', 'suisse', 'switzerland', 'geneve', 'lausanne', 'zurich', 'luxembourg',
+  'quebec', 'montreal', 'canada', 'london', 'londres', 'dubai', 'congo',
+  'kinshasa', 'brazzaville', 'gabon', 'libreville', 'madagascar', 'bamako',
+  'mali', 'togo', 'benin', 'cotonou', 'guinee', 'conakry', 'haiti',
+];
+const FOREIGN_TOKEN_REGEX = new RegExp(`\\b(${FOREIGN_TOKENS.join('|')})\\b`);
+
+// Foreign phone calling codes (France is +33, deliberately excluded).
+const FOREIGN_CALLING_CODES = [
+  '+225', '+221', '+212', '+213', '+216', '+32', '+41', '+352', '+44',
+  '+237', '+243', '+242', '+241', '+229', '+228', '+261', '+509',
+];
+
+/**
+ * Returns true if the profile shows a CLEARLY foreign (non-France) signal:
+ * a foreign phone calling code, or a foreign country/city in the bio,
+ * username, or full name. Used to exclude non-French prospects while keeping
+ * profiles that simply have no location info.
+ *
+ * @param {{ biography?: string|null, username?: string|null, fullName?: string|null }} profile
+ * @returns {boolean}
+ */
+export function isForeignProfile(profile) {
+  if (!profile) return false;
+
+  // Calling codes are checked on text that still contains the '+' sign.
+  const bio = normalize(profile.biography);
+  for (const code of FOREIGN_CALLING_CODES) {
+    if (bio.includes(code)) return true;
+  }
+
+  // Tokens are checked on a normalized, punctuation-flattened haystack so that
+  // handles like "torkkan_cotedivoire" still match on word boundaries.
+  const haystack = normalize(
+    [profile.biography, profile.username, profile.fullName].filter(Boolean).join(' '),
+  ).replace(/[^a-z0-9]+/g, ' ');
+
+  return FOREIGN_TOKEN_REGEX.test(haystack);
+}

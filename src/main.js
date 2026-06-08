@@ -12,7 +12,7 @@
  */
 
 import { Actor } from 'apify';
-import { isBtpProfile, hasNoWebsite } from './filters.js';
+import { isBtpProfile, hasNoWebsite, isForeignProfile } from './filters.js';
 import { scoreProfile } from './scorer.js';
 import { pushLeadToSupabase } from './supabase.js';
 
@@ -79,6 +79,8 @@ try {
     minFollowers = 80,
     maxFollowers = 25000,
     minPosts = 5,
+    excludeForeign = true,
+    excludeVerified = true,
     supabaseUrl,
     supabaseKey,
     supabaseTable = 'leads',
@@ -155,6 +157,12 @@ try {
 
         // Filter: no detectable website.
         if (!hasNoWebsite(profile)) continue;
+
+        // Filter: exclude clearly foreign (non-France) profiles.
+        if (excludeForeign && isForeignProfile(profile)) continue;
+
+        // Filter: exclude verified accounts (already established notoriety).
+        if (excludeVerified && profile.isVerified) continue;
 
         // Filter: follower / post thresholds.
         if (profile.followersCount < minFollowers || profile.followersCount > maxFollowers) {
