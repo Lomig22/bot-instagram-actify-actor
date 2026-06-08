@@ -1,0 +1,93 @@
+{
+  "title": "Instagram BTP Lead Scraper Input",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "hashtags": {
+      "title": "Hashtags",
+      "type": "array",
+      "description": "Liste des hashtags Instagram à scraper (sans le #).",
+      "editor": "stringList",
+      "default": [
+        "electricien",
+        "carreleur",
+        "artisanbtp",
+        "plaquiste",
+        "renovationinterieure",
+        "plombier",
+        "peintreenbatiment",
+        "btpfrance",
+        "maconnerie",
+        "charpentier",
+        "couvreur",
+        "serrurier",
+        "menuisier",
+        "faience",
+        "chauffagiste",
+        "isolation",
+        "carrelage",
+        "peinturemaison",
+        "renovationmaison",
+        "artisanfrancais"
+      ]
+    },
+    "resultsPerHashtag": {
+      "title": "Résultats par hashtag",
+      "type": "integer",
+      "description": "Nombre de posts à récupérer par hashtag.",
+      "editor": "number",
+      "minimum": 20,
+      "maximum": 500,
+      "default": 150
+    },
+    "minFollowers": {
+      "title": "Abonnés minimum",
+      "type": "integer",
+      "description": "Nombre minimum d'abonnés pour qualifier un profil.",
+      "editor": "number",
+      "default": 80
+    },
+    "maxFollowers": {
+      "title": "Abonnés maximum",
+      "type": "integer",
+      "description": "Nombre maximum d'abonnés pour qualifier un profil.",
+      "editor": "number",
+      "default": 25000
+    },
+    "minPosts": {
+      "title": "Posts minimum",
+      "type": "integer",
+      "description": "Nombre minimum de publications pour qualifier un profil.",
+      "editor": "number",
+      "default": 5
+    },
+    "supabaseUrl": {
+      "title": "Supabase URL",
+      "type": "string",
+      "description": "URL du projet Supabase (ex: https://xxxx.supabase.co). Optionnel.",
+      "editor": "textfield"
+    },
+    "supabaseKey": {
+      "title": "Supabase Key",
+      "type": "string",
+      "description": "Clé service_role ou anon de Supabase. Optionnel.",
+      "editor": "textfield",
+      "isSecret": true
+    },
+    "supabaseTable": {
+      "title": "Table Supabase",
+      "type": "string",
+      "description": "Nom de la table Supabase cible.",
+      "editor": "textfield",
+      "default": "leads"
+    },
+    "proxyEnabled": {
+      "title": "Proxy activé",
+      "type": "boolean",
+      "description": "Utiliser le proxy résidentiel Apify pour le scraping.",
+      "editor": "checkbox",
+      "default": true
+    }
+  },
+  "required": ["hashtags"]
+}

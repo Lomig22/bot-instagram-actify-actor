@@ -1,0 +1,9 @@
+{
+  "actorSpecification": 1,
+  "name": "instagram-btp-lead-scraper",
+  "title": "Instagram BTP Lead Scraper",
+  "description": "Scrape les profils Instagram d'artisans BTP français sans site web. Filtre, score et exporte vers Supabase.",
+  "version": "1.0",
+  "buildTag": "latest",
+  "input": "./input_schema.json"
+}
