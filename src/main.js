@@ -14,7 +14,7 @@
 import { Actor } from 'apify';
 import { isBtpProfile, hasNoWebsite, isForeignProfile } from './filters.js';
 import { scoreProfile } from './scorer.js';
-import { pushLeadToSupabase } from './supabase.js';
+import { pushLeadToSupabase, fetchExistingUsernames } from './supabase.js';
 
 const INSTAGRAM_SCRAPER_ACTOR = 'apify/instagram-scraper';
 
@@ -99,8 +99,17 @@ try {
 
   const seenUsernames = new Set();
 
+  // Cross-run anti-duplicate: preload usernames already in Supabase so we never
+  // re-enrich (and re-pay for) a profile that was sourced in a previous run.
+  if (supabaseConfig) {
+    const existing = await fetchExistingUsernames(supabaseConfig);
+    for (const username of existing) seenUsernames.add(username);
+    console.log(`🗃️  ${existing.size} profils déjà en base → ignorés (anti-doublon inter-runs)`);
+  }
+
   let totalScraped = 0;
   let totalQualified = 0;
+  let totalSkippedKnown = 0;
   const runAt = new Date().toISOString();
 
   console.log(`🚀 Démarrage — ${hashtags.length} hashtags, ${resultsPerHashtag} résultats/hashtag`);
@@ -123,21 +132,29 @@ try {
 
       const owners = [];
       const ownerSet = new Set();
+      let skippedKnown = 0;
       for (const post of posts) {
         const username = post.ownerUsername;
-        if (username && !ownerSet.has(username) && !seenUsernames.has(username)) {
-          ownerSet.add(username);
-          owners.push(username);
+        if (!username || ownerSet.has(username)) continue;
+        ownerSet.add(username);
+        // Already sourced (this run or a previous one) → skip before enrichment.
+        if (seenUsernames.has(username)) {
+          skippedKnown += 1;
+          continue;
         }
+        owners.push(username);
       }
+      totalSkippedKnown += skippedKnown;
 
       if (owners.length === 0) {
-        console.log(`   Aucun propriétaire exploitable pour #${hashtag}`);
+        console.log(`   Aucun nouveau profil pour #${hashtag} (${skippedKnown} déjà connus, ignorés)`);
         await randomSleep(2000, 4000);
         continue;
       }
 
-      console.log(`   ${posts.length} posts → ${owners.length} profils uniques à enrichir`);
+      console.log(
+        `   ${posts.length} posts → ${owners.length} nouveaux profils à enrichir (${skippedKnown} déjà connus, ignorés)`,
+      );
 
       // ── Stage 2: profile details for each owner ──
       const detailsRun = await Actor.call(INSTAGRAM_SCRAPER_ACTOR, {
@@ -220,6 +237,7 @@ try {
   await Actor.setValue('OUTPUT', {
     totalScraped,
     totalQualified,
+    totalSkippedKnown,
     qualificationRate,
     runAt,
   });
@@ -227,6 +245,7 @@ try {
   console.log('\n────────────────────────────────────────');
   console.log('📊 Résumé du run');
   console.log(`   Profils scrapés     : ${totalScraped}`);
+  console.log(`   Déjà connus (ignorés) : ${totalSkippedKnown}`);
   console.log(`   Leads qualifiés     : ${totalQualified}`);
   console.log(`   Taux de qualification : ${qualificationRate}%`);
   console.log(`   Supabase            : ${supabaseConfig ? 'activé' : 'désactivé'}`);
