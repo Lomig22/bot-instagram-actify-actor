@@ -109,9 +109,10 @@ try {
       console.log(`\n🔎 Hashtag #${hashtag}`);
 
       // ── Stage 1: hashtag posts → unique owner usernames ──
+      // Hit the hashtag page directly (directUrls). Using search+searchType
+      // routes through a Google scrape that returns 0 results for IG tags.
       const postsRun = await Actor.call(INSTAGRAM_SCRAPER_ACTOR, {
-        search: hashtag,
-        searchType: 'hashtag',
+        directUrls: [`https://www.instagram.com/explore/tags/${encodeURIComponent(hashtag)}/`],
         resultsType: 'posts',
         resultsLimit: resultsPerHashtag,
         proxy,
