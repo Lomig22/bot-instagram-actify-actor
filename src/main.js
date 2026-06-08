@@ -95,7 +95,6 @@ try {
       ? { url: supabaseUrl, key: supabaseKey, table: supabaseTable }
       : null;
 
-  const dataset = await Actor.openDataset('leads-btp-qualified');
   const seenUsernames = new Set();
 
   let totalScraped = 0;
@@ -186,7 +185,8 @@ try {
           status: 'new',
         };
 
-        await dataset.pushData(lead);
+        // Write to the run's default dataset so the Output tab + CSV export work.
+        await Actor.pushData(lead);
 
         if (supabaseConfig) {
           await pushLeadToSupabase(lead, supabaseConfig);
