@@ -69,7 +69,9 @@ export async function pushLeadToSupabase(lead, config) {
     return { success: false, error: 'Configuration Supabase incomplète' };
   }
 
-  const endpoint = `${url.replace(/\/$/, '')}/rest/v1/${table}`;
+  // on_conflict=username makes ignore-duplicates trigger on the username unique
+  // constraint (not the always-unique uuid primary key).
+  const endpoint = `${url.replace(/\/$/, '')}/rest/v1/${table}?on_conflict=username`;
 
   try {
     const response = await fetch(endpoint, {
